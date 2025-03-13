@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CCTP Bridge Demo</title>
+  <link rel="stylesheet" href="styles.css">
+  <!-- Web3.js for Ethereum interaction -->
+  <script src="https://cdn.jsdelivr.net/npm/web3@1.10.0/dist/web3.min.js"></script>
+  <!-- Ethers.js for convenient Ethereum utilities -->
+  <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+  <!-- Configuration file -->
+  <script src="config.js"></script>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>CCTP Bridge Demo</h1>
+      <div class="wallet-status">
+        <span id="wallet-address">Not connected</span>
+        <button id="connect-wallet">Connect Wallet</button>
+      </div>
+    </header>
+
+    <div class="main-content">
+      <div class="bridge-form">
+        <h2>Bridge USDC</h2>
+        
+        <div class="form-group">
+          <label for="source-chain">Source Chain:</label>
+          <select id="source-chain">
+            <option value="base">Base</option>
+            <option value="polygon">Polygon</option>
+            <option value="solana">Solana</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="destination-chain">Destination Chain:</label>
+          <select id="destination-chain">
+            <option value="polygon">Polygon</option>
+            <option value="base">Base</option>
+            <option value="solana">Solana</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="amount">Amount (USDC):</label>
+          <input type="number" id="amount" min="0.000001" step="0.000001" value="1">
+          <span class="hint">6 decimal places, 1 USDC = 1000000</span>
+        </div>
+        
+        <div class="form-group">
+          <label for="recipient-address">Recipient Address:</label>
+          <input type="text" id="recipient-address" placeholder="0x...">
+          <button id="use-current-wallet">Use Current Wallet</button>
+        </div>
+        
+        <button id="start-bridge" class="primary-button">Start Bridge</button>
+      </div>
+      
+      <div class="bridge-status">
+        <h2>Bridge Status</h2>
+        <div class="status-container">
+          <div class="step" id="step-1">
+            <div class="step-number">1</div>
+            <div class="step-content">
+              <h3>USDC Approval</h3>
+              <p class="step-description">Approve USDC for burning</p>
+              <div class="step-status" data-status="pending">Pending</div>
+              <div class="step-details"></div>
+            </div>
+          </div>
+          
+          <div class="step" id="step-2">
+            <div class="step-number">2</div>
+            <div class="step-content">
+              <h3>Burn USDC</h3>
+              <p class="step-description">Burn USDC on source chain</p>
+              <div class="step-status" data-status="pending">Pending</div>
+              <div class="step-details"></div>
+            </div>
+          </div>
+          
+          <div class="step" id="step-3">
+            <div class="step-number">3</div>
+            <div class="step-content">
+              <h3>Wait for Attestation</h3>
+              <p class="step-description">Wait for Circle's attestation</p>
+              <div class="step-status" data-status="pending">Pending</div>
+              <div class="step-details"></div>
+            </div>
+          </div>
+          
+          <div class="step" id="step-4">
+            <div class="step-number">4</div>
+            <div class="step-content">
+              <h3>Mint USDC</h3>
+              <p class="step-description">Mint USDC on destination chain</p>
+              <div class="step-status" data-status="pending">Pending</div>
+              <div class="step-details"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="debug-panel">
+      <h2>Debug Panel <button id="toggle-debug" class="small-button">Toggle</button></h2>
+      <div class="debug-content">
+        <div class="log-section">
+          <h3>Event Log</h3>
+          <div id="event-log" class="log-container"></div>
+          <button id="clear-log" class="small-button">Clear Log</button>
+        </div>
+        
+        <div class="transaction-section">
+          <h3>Transaction Details</h3>
+          <div id="transaction-details" class="details-container"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom JavaScript -->
+  <script src="app.js"></script>
+</body>
+</html>
