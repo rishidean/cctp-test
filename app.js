@@ -30,6 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const amountInput = document.getElementById('amount');
   const recipientAddressInput = document.getElementById('recipient-address');
   const useCurrentWalletBtn = document.getElementById('use-current-wallet');
+  const useTestWalletBtn = document.getElementById('use-test-wallet');
   const startBridgeBtn = document.getElementById('start-bridge');
   const clearLogBtn = document.getElementById('clear-log');
   const toggleDebugBtn = document.getElementById('toggle-debug');
@@ -69,6 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function setupEventListeners() {
     connectWalletBtn.addEventListener('click', connectWallet);
     useCurrentWalletBtn.addEventListener('click', useCurrentWallet);
+    useTestWalletBtn.addEventListener('click', useTestWallet);
     startBridgeBtn.addEventListener('click', startBridge);
     clearLogBtn.addEventListener('click', clearLog);
     toggleDebugBtn.addEventListener('click', toggleDebug);
@@ -164,6 +166,17 @@ document.addEventListener('DOMContentLoaded', () => {
       logEvent('warning', 'No wallet connected');
     }
   }
+  
+  // Use test wallet as recipient
+  function useTestWallet() {
+    const destinationChain = destinationChainSelect.value;
+    if (window.appConfig.testWallets && window.appConfig.testWallets[destinationChain]) {
+      recipientAddressInput.value = window.appConfig.testWallets[destinationChain];
+      logEvent('info', `Using test wallet for ${destinationChain}: ${window.appConfig.testWallets[destinationChain]}`);
+    } else {
+      logEvent('warning', `No test wallet configured for ${destinationChain}`);
+    }
+  }
 
   // Handler for source chain change
   function onSourceChainChange() {
@@ -197,6 +210,15 @@ document.addEventListener('DOMContentLoaded', () => {
           sourceChainSelect.value = chain;
           break;
         }
+      }
+    }
+    
+    // If a test wallet is currently being used, update it to the new destination chain
+    if (recipientAddressInput.value && Object.values(window.appConfig.testWallets).includes(recipientAddressInput.value)) {
+      // Check if there's a test wallet for the new destination chain
+      if (window.appConfig.testWallets[destinationChain]) {
+        recipientAddressInput.value = window.appConfig.testWallets[destinationChain];
+        logEvent('info', `Updated test wallet for ${destinationChain}: ${window.appConfig.testWallets[destinationChain]}`);
       }
     }
   }

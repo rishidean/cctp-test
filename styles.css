@@ -115,13 +115,23 @@ button:hover {
   font-weight: 500;
 }
 
-#use-current-wallet {
+.button-group {
+  display: flex;
+  gap: 10px;
   margin-top: 8px;
+}
+
+#use-current-wallet, #use-test-wallet {
+  flex: 1;
   background-color: #6c757d;
 }
 
-#use-current-wallet:hover {
+#use-current-wallet:hover, #use-test-wallet:hover {
   background-color: #5a6268;
+}
+
+#use-test-wallet {
+  background-color: #6c757d;
 }
 
 /* Status section styles */

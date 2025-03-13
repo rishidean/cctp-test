@@ -36,6 +36,13 @@ const config = {
     amount: '1000000', // 1 USDC (6 decimals)
     gasLimit: 300000
   },
+  
+  // Test wallet addresses
+  testWallets: {
+    base: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
+    polygon: '0x3e8cB4bd04d81498aB4b94a392c334F5328b237b',
+    solana: 'HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH'
+  },
 
   // Circle API
   circleApi: {
