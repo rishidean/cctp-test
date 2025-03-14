@@ -10,21 +10,23 @@ const config = {
       blockExplorerUrl: 'https://basescan.org',
       usdcAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       tokenMessengerAddress: '0x1682Ae6375C4E4A97e4B583BC394c861A46D8962',
-      domainId: 1653861089
+      messageTransmitterAddress: '0x9ff9a4da6f2157a9c82ce756f8fd7e0d75be8895',
+      domainId: 6 // Updated to correct Base domain ID
     },
     polygon: {
       name: 'Polygon',
       rpcUrl: 'https://polygon-rpc.com',
       chainId: '0x89', // 137 in decimal
       blockExplorerUrl: 'https://polygonscan.com',
-      messageTransmitterAddress: '0x6b25532e1060CE10CC58C90Ee87f19AC4d4867EE',
-      domainId: 1886350457
+      messageTransmitterAddress: '0x6B25532E1060CE10CC58C90Ee87f19AC4d4867EE',
+      domainId: 7 // Updated to correct Polygon domain ID
     },
     solana: {
       name: 'Solana',
       rpcUrl: 'https://api.mainnet-beta.solana.com',
       blockExplorerUrl: 'https://explorer.solana.com',
-      domainId: 1399811149 // Example value, verify with Circle docs
+      messageTransmitterAddress: 'CCTPmbSD7gX1bxKPAmg77w8oFzNFpaQiQUWD43TKaecd',
+      domainId: 5 // Updated to correct Solana domain ID
     }
   },
 
@@ -39,20 +41,14 @@ const config = {
   
   // Test wallet addresses
   testWallets: {
-    base: '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
-    polygon: '0x3e8cB4bd04d81498aB4b94a392c334F5328b237b',
-    solana: 'HN7cABqLq46Es1jh92dQQisAq662SmxELLLsHHe4YWrH'
+    base: '0x7eac9f0Dcf81Ed413647D2B1c9b02620DA298A93',
+    polygon: '0x6Bf48FFd5de59775ECFE324AF684f1A9E6D80e10',
+    solana: 'E7pWCGxvvhHZ6XgdJkBvfnt4J4UJBRJwhRmWjNwannci'
   },
 
   // Circle API
   circleApi: {
-    attestationUrl: 'https://iris-api.circle.com/v1/attestation/status'
-  },
-
-  // Polling settings for attestation
-  polling: {
-    intervalMs: 5000, // 5 seconds
-    maxAttempts: 30 // 2.5 minutes total
+    baseUrl: 'https://iris-api.circle.com/v1'
   },
 
   // Debug settings
