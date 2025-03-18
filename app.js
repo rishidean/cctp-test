@@ -21,7 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     messageId: null,
     attestation: null,
     attestationAttempts: 0,
-    maxAttestationAttempts: 30
+    maxAttestationAttempts: 30,
+    lastAttestationStatus: null
   };
 
   // DOM Elements
@@ -487,21 +488,54 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Prepare depositForBurn parameters
       let mintRecipient = state.recipientAddress;
+      let mintRecipientBytes32;
+      
+      // Log the original recipient address for debugging
+      logEvent('info', `Original recipient address: ${mintRecipient}`);
+      
+      try {
+        // Ensure we have ethers.js available
+        if (typeof ethers === 'undefined') {
+          logEvent('warning', 'Ethers.js not detected, falling back to manual address formatting');
+          
+          // Manual formatting if ethers is not available
       if (mintRecipient.startsWith('0x')) {
         mintRecipient = mintRecipient.slice(2); // Remove 0x prefix
       }
       
-      // Validate address format
+          // Validate address format
       if (mintRecipient.length !== 40) {
         throw new Error(`Invalid recipient address length: ${mintRecipient.length}. Expected 40 characters (without 0x prefix).`);
       }
-      if (!/^[0-9a-fA-F]{40}$/.test(mintRecipient)) {
-        throw new Error('Invalid recipient address format. Address should only contain hex characters.');
-      }
+          if (!/^[0-9a-fA-F]{40}$/.test(mintRecipient)) {
+            throw new Error('Invalid recipient address format. Address should only contain hex characters.');
+          }
       
-      // Convert address to bytes32
+          // Convert address to bytes32
       const paddedRecipient = mintRecipient.padStart(64, '0');
-      const mintRecipientBytes32 = '0x' + paddedRecipient;
+          mintRecipientBytes32 = '0x' + paddedRecipient;
+          
+          logEvent('info', `Manually formatted recipient bytes32: ${mintRecipientBytes32}`);
+        } else {
+          // Use ethers.js for proper address formatting (preferred method)
+          // Ensure the address has 0x prefix
+          if (!mintRecipient.startsWith('0x')) {
+            mintRecipient = '0x' + mintRecipient;
+          }
+          
+          // Ensure checksum casing is correct
+          const checksumAddress = ethers.utils.getAddress(mintRecipient);
+          
+          // Encode as bytes32
+          mintRecipientBytes32 = ethers.utils.hexZeroPad(checksumAddress, 32);
+          
+          logEvent('info', `Checksum address: ${checksumAddress}`);
+          logEvent('info', `Encoded bytes32 address: ${mintRecipientBytes32}`);
+        }
+      } catch (error) {
+        logEvent('error', `Error formatting recipient address: ${error.message}`);
+        throw error;
+      }
       
       logEvent('info', `Converted recipient address to bytes32: ${mintRecipientBytes32}`);
       
@@ -611,6 +645,19 @@ document.addEventListener('DOMContentLoaded', () => {
         logEvent('info', `Mint Recipient: ${mintRecipientBytes32}`);
         logEvent('info', `Burn Token: ${usdcAddress}`);
         
+        // Log the encoded call data for depositForBurn
+        const encodedBurnCallData = tokenMessengerContract.methods.depositForBurn(
+          state.amount,
+          destinationDomain,
+          mintRecipientBytes32,
+          usdcAddress
+        ).encodeABI();
+        
+        logEvent('info', '=== Encoded depositForBurn Call Data ===');
+        logEvent('info', `Function signature: ${encodedBurnCallData.slice(0, 10)}`);
+        logEvent('info', `Total call data length: ${encodedBurnCallData.length} bytes`);
+        logEvent('info', `Call data: ${encodedBurnCallData}`);
+        
         // Try gas estimation with higher limit first
         const initialGasLimit = 500000; // Start with a higher gas limit
         
@@ -651,13 +698,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Send transaction with the calculated gas parameters
         logEvent('info', 'Sending depositForBurn transaction...');
-        const tx = await tokenMessengerContract.methods.depositForBurn(
-          state.amount,
-          destinationDomain,
-          mintRecipientBytes32,
-          usdcAddress
-        ).send({
-          from: state.currentAccount,
+      const tx = await tokenMessengerContract.methods.depositForBurn(
+        state.amount,
+        destinationDomain,
+        mintRecipientBytes32,
+        usdcAddress
+      ).send({
+        from: state.currentAccount,
           gas: gasLimit,
           maxFeePerGas: maxFeePerGas.toString(),
           maxPriorityFeePerGas: maxPriorityFeePerGas
@@ -666,55 +713,71 @@ document.addEventListener('DOMContentLoaded', () => {
         // Get transaction receipt to extract message ID from logs
         const receipt = await state.web3.eth.getTransactionReceipt(tx.transactionHash);
         
-        // Find MessageSent event
-        const eventTopic = state.web3.utils.keccak256('MessageSent(bytes)');
-        const messageSentEvent = receipt.logs.find(log => 
-          log.topics && log.topics[0] === eventTopic
-        );
+        // Log the full receipt for debugging
+        logEvent('info', '=== Transaction Receipt ===');
+        logEvent('info', JSON.stringify(receipt, null, 2));
+        
+        // Log all events from the receipt
+        logEvent('info', '=== All Transaction Events ===');
+        receipt.logs.forEach((log, index) => {
+          logEvent('info', `Event ${index}:`);
+          logEvent('info', `  Address: ${log.address}`);
+          logEvent('info', `  Topics: ${JSON.stringify(log.topics)}`);
+          logEvent('info', `  Data: ${log.data}`);
+        });
+        
+        // Look for the MessageSent event
+        const messageSentEvent = receipt.logs.find(log => {
+          const isMatch = log.topics[0] === '0x8c5261668696ce22758910d05bab8f186d6eb247ceac2af2e82c7dc17669b036';
+          logEvent('info', `Checking event topic: ${log.topics[0]}`);
+          logEvent('info', `Is MessageSent event: ${isMatch}`);
+          return isMatch;
+        });
         
         if (messageSentEvent) {
-          // Extract message data from the event exactly as in Circle's example
-          const messageBytes = state.web3.eth.abi.decodeParameters(['bytes'], messageSentEvent.data)[0];
+          // Extract the message data from the event using Web3.js ABI decoding
+          const messageBytes = state.web3.eth.abi.decodeParameters(
+            ['bytes'],
+            messageSentEvent.data
+          )[0];
+          
+          // Hash the message bytes to get the message ID
           const messageHash = state.web3.utils.keccak256(messageBytes);
           
-          // Store message data for later use
+          // Store message hash and raw message data for later use
           state.messageId = messageHash;
           state.attestation = {
-            message: messageBytes,
+            message: messageBytes, // Store the actual message bytes
             attestation: null // Will be filled by waitForAttestation
           };
           
           // Add detailed logging
           logEvent('info', '=== Message ID Extraction Success ===');
-          logEvent('info', `Message Hash: ${messageHash}`);
           logEvent('info', `Message Bytes: ${messageBytes}`);
+          logEvent('info', `Message Hash: ${messageHash}`);
+          logEvent('info', `Message Hash length: ${messageHash.length}`);
+          logEvent('info', `Event Topics: ${JSON.stringify(messageSentEvent.topics)}`);
+          logEvent('info', `Event Data: ${messageSentEvent.data}`);
+          logEvent('info', `Stored messageId in state: ${state.messageId}`);
         } else {
-          // Log the full receipt for debugging if MessageSent event not found
-          logEvent('error', 'MessageSent event not found in transaction logs. Full receipt:');
-          logEvent('error', JSON.stringify(receipt, null, 2));
-          logEvent('error', 'Transaction logs:');
-          receipt.logs.forEach((log, index) => {
-            logEvent('error', `Log ${index}:`);
-            logEvent('error', `  Topics: ${JSON.stringify(log.topics)}`);
-            logEvent('error', `  Data: ${log.data}`);
-          });
-          throw new Error('MessageSent event not found in transaction logs');
+          logEvent('error', 'MessageSent event not found in transaction receipt');
+          throw new Error('MessageSent event not found in transaction receipt');
         }
         
         // Update state and UI
         state.transactions.burn = tx.transactionHash;
         updateStepStatus(2, 'complete', `Burned ${state.amount/1000000} USDC on ${sourceChainConfig.name}. Transaction: ${shortenTxHash(tx.transactionHash)}`);
-        logEvent('success', `USDC burn successful. Transaction: ${tx.transactionHash}`);
-        
-        // Update transaction details
-        updateTransactionDetails('Burn', {
-          hash: tx.transactionHash,
-          from: tx.from,
-          to: tokenMessengerAddress,
-          value: '0',
-          status: 'confirmed'
-        });
-        
+      logEvent('success', `USDC burn successful. Transaction: ${tx.transactionHash}`);
+      
+      // Update transaction details
+      updateTransactionDetails('Burn', {
+        hash: tx.transactionHash,
+        from: tx.from,
+        to: tokenMessengerAddress,
+        value: '0',
+        status: 'confirmed'
+      });
+      
         return tx;
       } catch (error) {
         // Log detailed error information
@@ -806,103 +869,118 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error('No message ID found from burn transaction');
       }
 
-      // Add detailed diagnostic logging
-      logEvent('info', '=== Attestation Process Diagnostics ===');
+      // Add initial diagnostic logging
+      logEvent('info', '=== Starting Attestation Process ===');
       logEvent('info', `Message ID: ${state.messageId}`);
       logEvent('info', `Source Chain: ${state.sourceChain}`);
       logEvent('info', `Destination Chain: ${state.destinationChain}`);
-      logEvent('info', `Burn Transaction: ${state.transactions.burn}`);
       
-      // Check burn transaction status
-      try {
-        const burnReceipt = await state.web3.eth.getTransactionReceipt(state.transactions.burn);
-        logEvent('info', `Burn Transaction Status: ${burnReceipt.status}`);
-        logEvent('info', `Burn Transaction Block Number: ${burnReceipt.blockNumber}`);
-        logEvent('info', `Burn Transaction Confirmations: ${burnReceipt.confirmations}`);
-        
-        // Log all events from burn transaction
-        logEvent('info', 'Burn Transaction Events:');
-        burnReceipt.logs.forEach((log, index) => {
-          logEvent('info', `Event ${index}:`);
-          logEvent('info', `  Address: ${log.address}`);
-          logEvent('info', `  Topics: ${JSON.stringify(log.topics)}`);
-          logEvent('info', `  Data: ${log.data}`);
-        });
-      } catch (error) {
-        logEvent('error', `Failed to get burn transaction receipt: ${error.message}`);
-      }
-
-      state.attestationAttempts = 0;
+      // Add initial delay before starting to poll
+      logEvent('info', 'Waiting 15 seconds before starting attestation polling...');
+      await new Promise(resolve => setTimeout(resolve, 15000));
+      
       let attestationResponse = { status: 'pending' };
-      
-      while (state.attestationAttempts < state.maxAttestationAttempts) {
-        state.attestationAttempts++;
-        logEvent('info', `Polling attempt ${state.attestationAttempts}/${state.maxAttestationAttempts}`);
+        let attempts = 0;
+      const maxAttempts = window.appConfig.circleApi.attestationPolling.maxAttempts;
+      const pollingInterval = window.appConfig.circleApi.attestationPolling.interval;
         
+      logEvent('info', `Will poll for up to ${maxAttempts} attempts with ${pollingInterval/1000} second intervals (${Math.round(maxAttempts * pollingInterval/60000)} minutes total)`);
+      
+      while (attempts < maxAttempts) {
+          attempts++;
         try {
-          // Log API request details
-          const apiUrl = `https://iris-api.circle.com/v1/attestations/${state.messageId}`;
-          logEvent('info', `Making API request to: ${apiUrl}`);
+          // Only log every 5th attempt to reduce log noise
+          const shouldLog = attempts === 1 || attempts % 5 === 0 || attempts === maxAttempts;
+          if (shouldLog) {
+            logEvent('info', `Polling Circle API for attestation (attempt ${attempts}/${maxAttempts})...`);
+            updateStepStatus(3, 'in-progress', `Waiting for Circle attestation (attempt ${attempts}/${maxAttempts})`);
+          }
           
-          const response = await fetch(apiUrl, {
+          const response = await fetch(`https://iris-api.circle.com/v1/attestations/${state.messageId}`, {
             method: 'GET',
             headers: {
               'Accept': 'application/json'
             }
           });
           
-          // Log response details
-          logEvent('info', `API Response Status: ${response.status}`);
-          logEvent('info', `API Response Headers: ${JSON.stringify(Object.fromEntries(response.headers.entries()))}`);
-          
           if (!response.ok) {
-            const errorText = await response.text();
-            logEvent('error', `API request failed with status ${response.status}: ${response.statusText}`);
-            logEvent('error', `Error details: ${errorText}`);
-            
             if (response.status === 404) {
-              logEvent('info', 'Message ID not found yet, will retry...');
-              // Add delay before retry
-              await new Promise(resolve => setTimeout(resolve, 2000));
+              if (shouldLog) {
+                logEvent('info', 'Message not found yet, waiting for next poll...');
+              }
+              await new Promise(resolve => setTimeout(resolve, pollingInterval));
             } else if (response.status === 429) {
-              logEvent('warning', 'Rate limit hit, increasing delay...');
-              await new Promise(resolve => setTimeout(resolve, 5000));
+              logEvent('warning', 'Rate limit hit, waiting 15 seconds...');
+              await new Promise(resolve => setTimeout(resolve, 15000));
             } else {
+              const errorText = await response.text();
+              logEvent('error', `API request failed: ${response.status} ${response.statusText}`);
+              logEvent('error', `Error details: ${errorText}`);
               throw new Error(`API request failed: ${response.status} ${response.statusText}`);
             }
           } else {
             attestationResponse = await response.json();
-            logEvent('info', `Current attestation status: ${attestationResponse.status}`);
-            logEvent('info', `Full attestation response: ${JSON.stringify(attestationResponse, null, 2)}`);
             
-            if (attestationResponse.status === 'complete' && attestationResponse.attestation) {
-              state.attestation = {
-                message: state.attestation.message,
-                attestation: attestationResponse.attestation,
-                timestamp: new Date().toISOString()
-              };
+            // Always log status changes
+            if (!state.lastAttestationStatus || state.lastAttestationStatus !== attestationResponse.status) {
+              logEvent('info', `Attestation status changed to: ${attestationResponse.status}`);
+              state.lastAttestationStatus = attestationResponse.status;
+            }
+            
+            // Handle different attestation statuses
+            switch (attestationResponse.status) {
+              case 'pending_confirmations':
+                if (shouldLog) {
+                  logEvent('info', 'Message is pending confirmations. Circle is waiting for sufficient block confirmations...');
+                  const timeElapsed = Math.round((attempts * pollingInterval) / 1000);
+                  logEvent('info', `Elapsed time: ${timeElapsed} seconds (${Math.round(timeElapsed/60)} minutes)`);
+                }
+                await new Promise(resolve => setTimeout(resolve, pollingInterval));
+                break;
               
-              updateStepStatus(3, 'complete', 'Received attestation from Circle');
-              logEvent('success', 'Attestation received');
+              case 'complete':
+                if (attestationResponse.attestation) {
+            state.attestation = {
+                    message: state.attestation.message,
+                    attestation: attestationResponse.attestation,
+              timestamp: new Date().toISOString()
+            };
+            
+            updateStepStatus(3, 'complete', 'Received attestation from Circle');
+                  logEvent('success', 'Attestation received successfully');
+                  logEvent('info', `Total time to receive attestation: ${Math.round((attempts * pollingInterval) / 1000)} seconds`);
+                  
+                  return state.attestation;
+          } else {
+                  logEvent('error', 'Attestation marked as complete but no attestation data received');
+                  throw new Error('Invalid attestation response: missing attestation data');
+                }
               
-              return state.attestation;
+              case 'failed':
+                logEvent('error', 'Attestation generation failed');
+                throw new Error('Circle failed to generate attestation');
+              
+              default:
+                if (shouldLog) {
+                  logEvent('info', `Unknown attestation status: ${attestationResponse.status}`);
+                }
+                await new Promise(resolve => setTimeout(resolve, pollingInterval));
             }
           }
         } catch (error) {
-          logEvent('error', `Polling attempt ${state.attestationAttempts} failed: ${error.message}`);
           if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
             logEvent('error', 'Network error - possible connectivity issues with Circle API');
+          } else {
+            logEvent('error', `Error during attestation polling: ${error.message}`);
           }
-          // Continue to next attempt
+          // Continue polling despite errors
         }
         
-        if (state.attestationAttempts < state.maxAttestationAttempts) {
-          logEvent('info', 'Waiting 2 seconds before next attempt...');
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
+        // Wait for the configured polling interval before next attempt
+        await new Promise(resolve => setTimeout(resolve, pollingInterval));
       }
       
-      throw new Error(`Attestation polling timed out after ${state.maxAttestationAttempts} attempts`);
+      throw new Error(`Attestation polling timed out after ${maxAttempts} attempts (${Math.round(maxAttempts * pollingInterval/60000)} minutes)`);
     } catch (error) {
       updateStepStatus(3, 'failed', `Attestation failed: ${error.message}`);
       throw new Error(`Failed to get attestation: ${error.message}`);
@@ -918,7 +996,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Switch to destination network with more detailed logging
       logEvent('info', `Current network: ${state.currentNetwork}`);
-      logEvent('info', `Target network (Polygon): ${destChainConfig.chainId}`);
+      logEvent('info', `Target network (${destChainConfig.name}): ${destChainConfig.chainId}`);
       logEvent('info', `Switching to ${destChainConfig.name} network`);
       
       const switchResult = await switchToNetwork(destChainConfig.chainId);
@@ -962,10 +1040,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       ];
       
-      // Ensure address is checksummed
-      const messageTransmitterAddress = state.web3.utils.toChecksumAddress(destChainConfig.messageTransmitterAddress);
+      // Use the correct MessageTransmitter address for Polygon
+      // Note: This is the official MessageTransmitter contract address on Polygon
+      const messageTransmitterAddress = state.web3.utils.toChecksumAddress("0xF3be9355363857F3e001be68856A2f96b4C39Ba9");
       
       logEvent('info', `Using MessageTransmitter at ${messageTransmitterAddress}`);
+      logEvent('info', 'IMPORTANT: Using official Circle MessageTransmitter contract on Polygon');
       
       const messageTransmitterContract = new state.web3.eth.Contract(
         messageTransmitterAbi,
@@ -977,6 +1057,41 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error('Invalid attestation data');
       }
 
+      // Try to decode message bytes to verify amount and recipient
+      try {
+        logEvent('info', '=== Analyzing message data ===');
+        
+        // Log original raw message bytes for debugging
+        logEvent('info', `Raw Message Bytes: ${state.attestation.message}`);
+        
+        // Try to extract amount from the message - typically at a specific position in the encoded data
+        // Note: This is a simplified approach to peek into the data; the actual structure depends on Circle's protocol
+        if (state.attestation.message.length >= 256) {
+          // Log relevant chunks of the message in case we need to debug
+          // Breaking it down into chunks to make it easier to analyze
+          let messageHex = state.attestation.message;
+          // Log chunks of the message - this is just for debugging
+          for (let i = 0; i < Math.min(messageHex.length, 1000); i += 64) {
+            const chunk = messageHex.substring(i, Math.min(i + 64, messageHex.length));
+            if (chunk && chunk.length > 0) {
+              logEvent('info', `Message chunk ${i/64}: ${chunk}`);
+            }
+          }
+          
+          // Try to find the amount encoded in the message
+          // The actual position depends on Circle's message format
+          let potentialAmount = '';
+          // We have to guess where the amount might be based on observed patterns
+          // Typically, amounts are encoded as uint256 values in hex
+          
+          logEvent('info', `Expected USDC amount in base units: ${state.amount}`);
+          logEvent('info', `Expected USDC amount decimal: ${parseInt(state.amount)/1000000} USDC`);
+        }
+      } catch (decodeError) {
+        // Just log the error but continue with the mint process
+        logEvent('warning', `Error analyzing message data: ${decodeError.message}`);
+      }
+
       // Log the parameters we'll use for minting
       logEvent('info', 'Preparing receiveMessage transaction with parameters:');
       logEvent('info', `- MessageTransmitter Address: ${messageTransmitterAddress}`);
@@ -986,6 +1101,18 @@ document.addEventListener('DOMContentLoaded', () => {
       logEvent('info', `- Attestation length: ${state.attestation.attestation.length} bytes`);
       
       try {
+        // Log the exact encoded call data for diagnostic purposes
+        const encodedCallData = messageTransmitterContract.methods
+          .receiveMessage(state.attestation.message, state.attestation.attestation)
+          .encodeABI();
+        
+        logEvent('info', '=== Encoded receiveMessage Call Data ===');
+        logEvent('info', `Function signature: ${encodedCallData.slice(0, 10)}`);
+        logEvent('info', `Total call data length: ${encodedCallData.length} bytes`);
+        logEvent('info', `Full message parameter: ${state.attestation.message}`);
+        logEvent('info', `Full attestation parameter: ${state.attestation.attestation}`);
+        logEvent('info', `Call data: ${encodedCallData}`);
+
         // Estimate gas for the mint transaction
         logEvent('info', 'Estimating gas for mint transaction...');
         const gasEstimate = await messageTransmitterContract.methods
@@ -1016,20 +1143,63 @@ document.addEventListener('DOMContentLoaded', () => {
             gasPrice: gasPrice
           });
         
+        // Get receipt to verify mint transaction
+        const receipt = await state.web3.eth.getTransactionReceipt(tx.transactionHash);
+        logEvent('info', '=== Mint Transaction Receipt ===');
+        logEvent('info', `Status: ${receipt.status ? 'Success' : 'Failed'}`);
+        logEvent('info', `Gas Used: ${receipt.gasUsed}`);
+        
+        // Log all events from the receipt to check what happened
+        logEvent('info', '=== Mint Transaction Events ===');
+        if (receipt.logs && receipt.logs.length > 0) {
+          receipt.logs.forEach((log, index) => {
+            logEvent('info', `Event ${index}:`);
+            logEvent('info', `  Address: ${log.address}`);
+            logEvent('info', `  Topics: ${JSON.stringify(log.topics)}`);
+            logEvent('info', `  Data: ${log.data}`);
+          });
+          
+          // Try to find Transfer events to identify the amount transferred
+          const transferEvents = receipt.logs.filter(log => 
+            log.topics[0] === '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef'
+          );
+          
+          if (transferEvents.length > 0) {
+            transferEvents.forEach(event => {
+              try {
+                // The amount is typically in the data field for ERC20 transfers
+                const transferAmount = state.web3.utils.hexToNumberString(event.data);
+                logEvent('info', `Transfer amount from event: ${transferAmount} base units (${parseInt(transferAmount)/1000000} USDC)`);
+                
+                // Check if it matches our expected amount
+                if (transferAmount === '0') {
+                  logEvent('warning', 'Transfer amount is 0. This might indicate an issue with the bridge process.');
+                }
+              } catch (e) {
+                logEvent('warning', `Failed to parse transfer amount: ${e.message}`);
+              }
+            });
+          } else {
+            logEvent('warning', 'No Transfer events found in the transaction receipt.');
+          }
+        } else {
+          logEvent('warning', 'No logs found in the transaction receipt.');
+        }
+        
         // Update state and UI
         state.transactions.mint = tx.transactionHash;
         updateStepStatus(4, 'complete', `Minted USDC on ${destChainConfig.name}. Transaction: ${shortenTxHash(tx.transactionHash)}`);
         logEvent('success', `USDC mint successful. Transaction: ${tx.transactionHash}`);
-        
-        // Update transaction details
-        updateTransactionDetails('Mint', {
+      
+      // Update transaction details
+      updateTransactionDetails('Mint', {
           hash: tx.transactionHash,
           from: tx.from,
           to: messageTransmitterAddress,
-          value: '0',
-          status: 'confirmed'
-        });
-        
+        value: '0',
+        status: 'confirmed'
+      });
+      
         return tx;
       } catch (error) {
         // Log detailed error information
@@ -1105,7 +1275,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const counter = document.createElement('span');
         counter.className = 'attestation-counter';
         counter.textContent = ` (Attempt ${state.attestationAttempts}/${state.maxAttestationAttempts})`;
-        detailsElement.textContent = details;
+      detailsElement.textContent = details;
         detailsElement.appendChild(counter);
       } else {
         detailsElement.textContent = details;

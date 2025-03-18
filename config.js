@@ -48,7 +48,11 @@ const config = {
 
   // Circle API
   circleApi: {
-    baseUrl: 'https://iris-api.circle.com/v1'
+    baseUrl: 'https://iris-api.circle.com/v1',
+    attestationPolling: {
+      interval: 45000, //45 seconds
+      maxAttempts: 30  // 22.5 minutes total wait time
+    }
   },
 
   // Debug settings

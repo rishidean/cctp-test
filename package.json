@@ -1,0 +1,17 @@
+{
+  "name": "cctp-test",
+  "version": "1.0.0",
+  "description": "CCTP Bridge Test Application",
+  "main": "app.js",
+  "scripts": {
+    "start": "http-server . -p 3000 -c-1",
+    "dev": "http-server . -p 3000 -c-1"
+  },
+  "dependencies": {
+    "web3": "^1.9.0",
+    "ethers": "^5.7.2"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+} 
